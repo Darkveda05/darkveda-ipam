@@ -80,14 +80,9 @@ docker compose up -d
 
 ## Security notes
 
-- `config/config.php` and `.env` are git-ignored — they hold credentials.
+- `config/config.php` and `.env` are git-ignored and hold credentials.
 - Give the Zabbix integration a **read-only** API user; it only ever reads.
-- Serve behind TLS. Sessions are cookie-based with an 8-hour lifetime.
-- Uploads are validated by detected MIME type, stored under generated names,
-  and served as downloads with a restrictive CSP. On nginx, also add:
-  ```nginx
-  location ^~ /uploads/ { location ~ \.php$ { return 403; } }
-  ```
+
 
 ## Contributing
 
