@@ -1,0 +1,31 @@
+# --- secrets: never commit ------------------------------------
+config/config.php
+!config/.gitkeep
+!config/config.example.php
+.env
+*.env
+!.env.example
+
+# --- runtime data ---------------------------------------------
+public/uploads/*
+!public/uploads/.gitkeep
+!public/uploads/.htaccess
+!public/uploads/README.txt
+
+# --- backups & dumps ------------------------------------------
+*.sql.gz
+*.tar.gz
+backup-*.sql
+darkveda-ipam-*.zip
+
+# --- editors / OS ---------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# --- dependencies (if ever added) -----------------------------
+vendor/
+node_modules/
