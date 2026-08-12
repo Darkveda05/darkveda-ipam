@@ -1,7 +1,5 @@
 # --- secrets: never commit ------------------------------------
 config/config.php
-!config/.gitkeep
-!config/config.example.php
 .env
 *.env
 !.env.example

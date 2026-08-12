@@ -32,13 +32,8 @@ COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY . /var/www/html/
 
 # The installer is for bare-metal setups; the container bootstraps itself.
-# config/ is created here rather than assumed: it holds only git-ignored files
-# in some checkouts, so the directory may legitimately be absent.
 RUN rm -f /var/www/html/public/install.php \
-    && mkdir -p /var/www/html/config \
-                /var/www/html/public/uploads/rack \
-                /var/www/html/public/uploads/docs \
-                /var/www/html/public/uploads/models \
+    && mkdir -p /var/www/html/public/uploads/rack /var/www/html/public/uploads/docs \
     && chown -R www-data:www-data /var/www/html/public/uploads /var/www/html/config \
     && chmod +x /usr/local/bin/entrypoint.sh
 

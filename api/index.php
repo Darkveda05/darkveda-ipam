@@ -1,28 +1,6 @@
 <?php
 declare(strict_types=1);
 
-/**
- * DarkVeda IPAM — REST API v1
- *
- * Auth:   Authorization: Bearer <token>       (generated in Users & Tokens)
- * Base:   /api/v1
- *
- * GET    /api/v1/subnets                list subnets
- * POST   /api/v1/subnets                create subnet         {cidr, name?, vlan_id?, site_id?}
- * GET    /api/v1/subnets/{id}/ips       list IPs in subnet
- * POST   /api/v1/subnets/{id}/ips       assign IP             {address?|auto, hostname?, status?}
- * GET    /api/v1/ips?search=10.0.0.     search IPs / hostnames
- * DELETE /api/v1/ips/{id}               release an IP
- * GET    /api/v1/vlans                  list VLANs
- * GET    /api/v1/device-types           list device types
- * POST   /api/v1/ips/upsert             create-or-update an IP record by address
- * POST   /api/v1/monitoring             push monitoring status (Zabbix / scripts)
- * GET    /api/v1/monitoring             list monitoring status
- * GET    /api/v1/topology               LLDP/CDP neighbour edges
- * POST   /api/v1/topology               push neighbour edges
- * GET    /api/v1/racks                  racks with mounted devices
- */
-
 require dirname(__DIR__) . '/src/App.php';
 require dirname(__DIR__) . '/src/Database.php';
 require dirname(__DIR__) . '/src/Auth.php';
@@ -215,7 +193,7 @@ if ($method === 'GET' && $path === '/device-types') {
 }
 
 
-// ---------------- v2.0 automation endpoints ----------------
+// ---------------- automation endpoints ----------------
 
 // POST /ips/upsert  {address, subnet_cidr?|subnet_id?, hostname?, mac_address?, serial_number?,
 //                    os?, software_version?, status?, device_type_id?, description?}

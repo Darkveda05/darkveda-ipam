@@ -24,7 +24,7 @@ return [
         'port'     => (int)(getenv('DB_PORT') ?: 3306),
         'name'     => getenv('DB_NAME') ?: 'darkveda_ipam',
         'user'     => getenv('DB_USER') ?: 'darkveda',
-        'password' => getenv('DB_PASS') ?: 'darkveda',
+        'password' => getenv('DB_PASS') ?: '',
         'charset'  => 'utf8mb4',
     ],
     'zabbix' => [

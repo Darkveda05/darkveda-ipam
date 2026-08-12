@@ -10,23 +10,34 @@ final class App
     public static function config(): array
     {
         if (self::$config === null) {
-            $dir  = dirname(__DIR__) . '/config';
-            // config/config.php holds credentials and is deliberately not shipped
-            // (git-ignored, absent from the Docker image). When it is missing, fall
-            // back to the template — every value in it reads an environment
-            // variable first, which is how the container is configured.
-            $file = is_file($dir . '/config.php')
-                ? $dir . '/config.php'
-                : $dir . '/config.example.php';
-
-            if (!is_file($file)) {
-                http_response_code(500);
-                exit('DarkVeda IPAM: no configuration found. Copy config/config.example.php '
-                   . 'to config/config.php, or supply DB_HOST/DB_NAME/DB_USER/DB_PASS as environment variables.');
-            }
-            self::$config = require $file;
+            self::$config = require self::configFile();
         }
         return self::$config;
+    }
+
+    /**
+     * Locate the active configuration file.
+     *
+     * A hand-written config/config.php always wins. When it is absent — the
+     * normal case for a fresh clone or a container — we fall back to
+     * config/config.example.php, which reads every value from environment
+     * variables. That makes `docker compose up` work with nothing but the
+     * variables in .env, and keeps real credentials out of the repo and image.
+     */
+    public static function configFile(): string
+    {
+        $dir = dirname(__DIR__) . '/config';
+        $local = $dir . '/config.php';
+        if (is_file($local)) {
+            return $local;
+        }
+        $example = $dir . '/config.example.php';
+        if (is_file($example)) {
+            return $example;
+        }
+        throw new \RuntimeException(
+            'No configuration found. Expected config/config.php or config/config.example.php.'
+        );
     }
 
     public static function boot(): void

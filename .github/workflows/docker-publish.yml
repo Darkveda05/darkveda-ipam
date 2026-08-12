@@ -9,6 +9,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   lint:
@@ -20,13 +21,13 @@ jobs:
         with:
           php-version: '8.3'
       - name: Syntax-check every PHP file
-        shell: bash
         run: |
           fail=0
           while IFS= read -r f; do
             php -l "$f" > /dev/null || { echo "LINT FAIL: $f"; fail=1; }
           done < <(find . -name '*.php' -not -path './vendor/*')
           exit $fail
+        shell: bash
 
   build:
     name: Build image
@@ -37,45 +38,9 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-      - name: Work out image name and tags
-        id: img
-        shell: bash
-        run: |
-          IMAGE="${REGISTRY}/${GITHUB_REPOSITORY,,}"
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
-
-          TAGS="$IMAGE:latest"
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/v}"
-            MINOR="${VERSION%.*}"
-            TAGS="$TAGS,$IMAGE:$VERSION,$IMAGE:$MINOR"
-          else
-            SHORT_SHA="${GITHUB_SHA::7}"
-            TAGS="$TAGS,$IMAGE:$SHORT_SHA"
-          fi
-
-          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
-          echo "Image: $IMAGE"
-          echo "Tags:  $TAGS"
-
-          if [ -z "$TAGS" ]; then
-            echo "::error::Tag list is empty — refusing to build."
-            exit 1
-          fi
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
-      - name: Report which credential is in use
-        if: github.event_name != 'pull_request'
-        shell: bash
-        run: |
-          if [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
-            echo "Using the GHCR_TOKEN secret (personal access token)."
-          else
-            echo "Using GITHUB_TOKEN. If the push is denied with write_package,"
-            echo "either set Settings > Actions > General > Workflow permissions to"
-            echo "'Read and write permissions', or add a GHCR_TOKEN secret."
-          fi
 
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
@@ -83,33 +48,27 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v5
         with:
           context: .
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.img.outputs.tags }}
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.licenses=MIT
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Summary
-        if: github.event_name != 'pull_request'
-        shell: bash
-        run: |
-          {
-            echo "### Image published"
-            echo ""
-            echo '```'
-            echo "docker pull ${{ steps.img.outputs.image }}:latest"
-            echo '```'
-            echo ""
-            echo "Make the package public: **Repo → Packages → Package settings → Change visibility**."
-          } >> "$GITHUB_STEP_SUMMARY"

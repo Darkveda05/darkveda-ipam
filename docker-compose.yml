@@ -7,7 +7,11 @@
 # ---------------------------------------------------------------
 services:
   app:
-    image: ghcr.io/darkveda05/darkveda-ipam:latest
+
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: darkveda-ipam:local
     container_name: darkveda-ipam
     restart: unless-stopped
     ports:
