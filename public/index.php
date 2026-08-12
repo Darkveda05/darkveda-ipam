@@ -902,6 +902,179 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action !== null) {
             }
             App::redirect('/?page=racks&id=' . (int)($item['rack_id'] ?? 0));
 
+        // ---------------- Rack designer (v5.0) — JSON drag/move/resize ----------------
+        case 'rack_api':
+            Auth::requirePermission('racks.manage');
+            header('Content-Type: application/json; charset=utf-8');
+            $respond = static function (array $payload, int $code = 200): void {
+                http_response_code($code);
+                echo json_encode($payload);
+                exit;
+            };
+
+            $op     = $_POST['op'] ?? '';
+            $rackId = (int)($_POST['rack_id'] ?? 0);
+            $rack   = Database::one('SELECT * FROM racks WHERE id = ?', [$rackId]);
+            if (!$rack) {
+                $respond(['ok' => false, 'error' => 'Rack not found.'], 404);
+            }
+            $H = (int)$rack['u_height'];
+
+            // Enriched item row — mirrors the elevation query so the client can
+            // render the faceplate and metadata straight from the response.
+            $fetchItem = static function (int $id) use ($rackId) {
+                return Database::one(
+                    'SELECT ri.id, ri.name, ri.kind, ri.u_position, ri.u_size, ri.face,
+                            ri.color, ri.description, ri.ip_id, ri.device_type_id,
+                            i.address, i.subnet_id,
+                            TRIM(CONCAT(
+                                COALESCE(v.name, vd.name, ""), " ",
+                                COALESCE(dt.model, dtd.model, "")
+                            )) AS type_label,
+                            COALESCE(NULLIF(ri.photo_path, ""), dt.image_path, dtd.image_path) AS display_image
+                     FROM rack_items ri
+                     LEFT JOIN ip_addresses i ON i.id = ri.ip_id
+                     LEFT JOIN device_types dt ON dt.id = i.device_type_id
+                     LEFT JOIN vendors v ON v.id = dt.vendor_id
+                     LEFT JOIN device_types dtd ON dtd.id = ri.device_type_id
+                     LEFT JOIN vendors vd ON vd.id = dtd.vendor_id
+                     WHERE ri.id = ? AND ri.rack_id = ?',
+                    [$id, $rackId]
+                );
+            };
+
+            // Fit + overlap check for a candidate placement on one face.
+            $checkPlacement = static function (int $pos, int $size, string $face, int $exclude) use ($rackId, $H) {
+                if ($pos < 1 || $size < 1 || ($pos + $size - 1) > $H) {
+                    return 'A ' . $size . 'U item at U' . $pos . " doesn't fit in a " . $H . 'U rack.';
+                }
+                $clash = Database::one(
+                    'SELECT name, u_position, u_size FROM rack_items
+                     WHERE rack_id = ? AND face = ? AND id <> ?
+                       AND u_position <= ? AND (u_position + u_size - 1) >= ?
+                     LIMIT 1',
+                    [$rackId, $face, $exclude, $pos + $size - 1, $pos]
+                );
+                if ($clash) {
+                    return sprintf('U%d–U%d overlaps "%s" (U%d–U%d).',
+                        $pos, $pos + $size - 1, $clash['name'],
+                        (int)$clash['u_position'], (int)$clash['u_position'] + (int)$clash['u_size'] - 1);
+                }
+                return null;
+            };
+
+            $normFace = static fn($f) => (($f ?? 'front') === 'rear' ? 'rear' : 'front');
+
+            switch ($op) {
+                case 'create':
+                    $pos   = (int)($_POST['u_position'] ?? 0);
+                    $size  = max(1, min(20, (int)($_POST['u_size'] ?? 1)));
+                    $face  = $normFace($_POST['face'] ?? 'front');
+                    $kind  = preg_replace('/[^a-z0-9 _-]/i', '', (string)($_POST['kind'] ?? 'device')) ?: 'device';
+                    $ipId  = (int)($_POST['ip_id'] ?? 0) ?: null;
+                    $dtId  = (int)($_POST['device_type_id'] ?? 0) ?: null;
+                    $name  = trim($_POST['name'] ?? '');
+
+                    if ($ipId) {
+                        $ipRec = Database::one('SELECT address, hostname FROM ip_addresses WHERE id = ?', [$ipId]);
+                        if (!$ipRec) {
+                            $ipId = null;
+                        } elseif ($name === '') {
+                            $name = $ipRec['hostname'] ?: $ipRec['address'];
+                        }
+                    }
+                    if ($dtId) {
+                        $dtRec = Database::one(
+                            'SELECT dt.model, dt.u_height, v.name AS vendor
+                             FROM device_types dt LEFT JOIN vendors v ON v.id = dt.vendor_id
+                             WHERE dt.id = ?', [$dtId]);
+                        if (!$dtRec) {
+                            $dtId = null;
+                        } elseif ($name === '') {
+                            $name = trim(($dtRec['vendor'] ?? '') . ' ' . $dtRec['model']);
+                        }
+                    }
+                    if ($name === '') {
+                        $respond(['ok' => false, 'error' => 'Give the item a name, or link an IP record or model.'], 422);
+                    }
+                    if ($err = $checkPlacement($pos, $size, $face, 0)) {
+                        $respond(['ok' => false, 'error' => $err], 409);
+                    }
+                    Database::exec(
+                        'INSERT INTO rack_items (rack_id, ip_id, device_type_id, name, kind, u_position, u_size, face, color, description)
+                         VALUES (?,?,?,?,?,?,?,?,?,?)',
+                        [$rackId, $ipId, $dtId, $name, $kind, $pos, $size, $face,
+                         trim($_POST['color'] ?? '') ?: null, trim($_POST['description'] ?? '') ?: null]
+                    );
+                    $id = (int)Database::lastId();
+                    Audit::log('create', 'rack_item', (string)$id, $name . ' U' . $pos);
+                    $respond(['ok' => true, 'item' => $fetchItem($id)]);
+                    // no break — respond() exits
+
+                case 'move':
+                case 'resize':
+                    $id  = (int)($_POST['id'] ?? 0);
+                    $cur = Database::one('SELECT * FROM rack_items WHERE id = ? AND rack_id = ?', [$id, $rackId]);
+                    if (!$cur) {
+                        $respond(['ok' => false, 'error' => 'Item not found.'], 404);
+                    }
+                    $pos  = (int)($_POST['u_position'] ?? $cur['u_position']);
+                    $size = max(1, min(20, (int)($_POST['u_size'] ?? $cur['u_size'])));
+                    $face = $normFace($_POST['face'] ?? $cur['face']);
+                    if ($err = $checkPlacement($pos, $size, $face, $id)) {
+                        $respond(['ok' => false, 'error' => $err], 409);
+                    }
+                    Database::exec(
+                        'UPDATE rack_items SET u_position = ?, u_size = ?, face = ? WHERE id = ?',
+                        [$pos, $size, $face, $id]
+                    );
+                    Audit::log('update', 'rack_item', (string)$id, $cur['name'] . ' → U' . $pos);
+                    $respond(['ok' => true, 'item' => $fetchItem($id)]);
+
+                case 'update':
+                    $id  = (int)($_POST['id'] ?? 0);
+                    $cur = Database::one('SELECT * FROM rack_items WHERE id = ? AND rack_id = ?', [$id, $rackId]);
+                    if (!$cur) {
+                        $respond(['ok' => false, 'error' => 'Item not found.'], 404);
+                    }
+                    $kind = preg_replace('/[^a-z0-9 _-]/i', '', (string)($_POST['kind'] ?? $cur['kind'])) ?: 'device';
+                    $name = trim($_POST['name'] ?? (string)$cur['name']);
+                    $ipId = array_key_exists('ip_id', $_POST)
+                        ? ((int)$_POST['ip_id'] ?: null)
+                        : ($cur['ip_id'] !== null ? (int)$cur['ip_id'] : null);
+                    if ($ipId) {
+                        $ipRec = Database::one('SELECT address, hostname FROM ip_addresses WHERE id = ?', [$ipId]);
+                        if (!$ipRec) {
+                            $ipId = null;
+                        } elseif ($name === '') {
+                            $name = $ipRec['hostname'] ?: $ipRec['address'];
+                        }
+                    }
+                    if ($name === '') {
+                        $respond(['ok' => false, 'error' => 'Give the item a name.'], 422);
+                    }
+                    Database::exec(
+                        'UPDATE rack_items SET name = ?, kind = ?, ip_id = ?, color = ?, description = ? WHERE id = ?',
+                        [$name, $kind, $ipId, trim($_POST['color'] ?? '') ?: null,
+                         trim($_POST['description'] ?? '') ?: null, $id]
+                    );
+                    Audit::log('update', 'rack_item', (string)$id, $name);
+                    $respond(['ok' => true, 'item' => $fetchItem($id)]);
+
+                case 'delete':
+                    $id   = (int)($_POST['id'] ?? 0);
+                    $item = Database::one('SELECT name, photo_path FROM rack_items WHERE id = ? AND rack_id = ?', [$id, $rackId]);
+                    if ($item) {
+                        Uploads::delete($item['photo_path']);
+                        Database::exec('DELETE FROM rack_items WHERE id = ?', [$id]);
+                        Audit::log('delete', 'rack_item', (string)$id, $item['name']);
+                    }
+                    $respond(['ok' => true, 'id' => $id]);
+
+                default:
+                    $respond(['ok' => false, 'error' => 'Unknown operation.'], 400);
+            }
+
         // ---------------- Monitoring auto-sync ----------------
         case 'monitoring_interval':
             Auth::requirePermission('monitoring.view');

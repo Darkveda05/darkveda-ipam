@@ -466,6 +466,7 @@ CREATE TABLE rack_items (
   id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   rack_id     INT UNSIGNED NOT NULL,
   ip_id       INT UNSIGNED NULL,
+  device_type_id INT UNSIGNED NULL,
   name        VARCHAR(160) NOT NULL,
   kind        VARCHAR(40)  NOT NULL DEFAULT 'device',
   u_position  SMALLINT UNSIGNED NOT NULL,
@@ -478,6 +479,8 @@ CREATE TABLE rack_items (
   created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (rack_id) REFERENCES racks(id) ON DELETE CASCADE,
   FOREIGN KEY (ip_id)   REFERENCES ip_addresses(id) ON DELETE SET NULL,
+  CONSTRAINT fk_rack_items_device_type
+    FOREIGN KEY (device_type_id) REFERENCES device_types(id) ON DELETE SET NULL,
   INDEX idx_rack_items_rack (rack_id, face, u_position)
 ) ENGINE=InnoDB;
 

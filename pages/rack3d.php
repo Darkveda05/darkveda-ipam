@@ -15,13 +15,18 @@ $scene = [];
 foreach ($racks as $r) {
     $items = Database::q(
         'SELECT ri.id, ri.name, ri.kind, ri.u_position, ri.u_size, ri.face, ri.color, ri.photo_path,
-                COALESCE(NULLIF(ri.photo_path, ""), dt.image_path) AS display_image,
+                COALESCE(NULLIF(ri.photo_path, ""), dt.image_path, dtd.image_path) AS display_image,
                 ri.description, i.address, i.subnet_id, i.os, i.software_version, i.serial_number,
-                TRIM(CONCAT(COALESCE(v.name, ""), " ", dt.model)) AS device_type
+                TRIM(CONCAT(
+                    COALESCE(v.name, vd.name, ""), " ",
+                    COALESCE(dt.model, dtd.model, "")
+                )) AS device_type
          FROM rack_items ri
          LEFT JOIN ip_addresses i ON i.id = ri.ip_id
          LEFT JOIN device_types dt ON dt.id = i.device_type_id
          LEFT JOIN vendors v ON v.id = dt.vendor_id
+         LEFT JOIN device_types dtd ON dtd.id = ri.device_type_id
+         LEFT JOIN vendors vd ON vd.id = dtd.vendor_id
          WHERE ri.rack_id = ?
          ORDER BY ri.u_position',
         [(int)$r['id']]

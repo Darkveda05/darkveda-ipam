@@ -15,7 +15,7 @@ declare(strict_types=1);
 return [
     'app' => [
         'name'     => 'DarkVeda IPAM',
-        'version'  => '1.0',
+        'version'  => '2.0',
         'debug'    => filter_var(getenv('APP_DEBUG') ?: 'false', FILTER_VALIDATE_BOOL),
         'timezone' => getenv('APP_TZ') ?: 'UTC',
     ],
